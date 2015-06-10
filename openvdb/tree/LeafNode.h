@@ -128,9 +128,9 @@ public:
         typedef ValueType WordType;
         static const Index WORD_COUNT = SIZE;
         /// Default constructor
-        Buffer(): mData(new ValueType[SIZE]), mOutOfCore(0) {}
+        Buffer(): mData(new ValueType[SIZE]), mOutOfCore(1) {}
         /// Construct a buffer populated with the specified value.
-        explicit Buffer(const ValueType& val): mData(new ValueType[SIZE]), mOutOfCore(0)
+        explicit Buffer(const ValueType& val): mData(new ValueType[SIZE]), mOutOfCore(1)
         {
             this->fill(val);
         }
@@ -148,7 +148,7 @@ public:
             }
         }
         /// Construct a buffer but don't allocate memory for the full array of values.
-        Buffer(PartialCreate, const ValueType&): mData(NULL), mOutOfCore(0) {}
+        Buffer(PartialCreate, const ValueType&): mData(NULL), mOutOfCore(1) {}
         /// Destructor
         ~Buffer()
         {
@@ -160,7 +160,7 @@ public:
         }
 
         /// Return @c true if this buffer's values have not yet been read from disk.
-        bool isOutOfCore() const { return bool(mOutOfCore); }
+        bool isOutOfCore() const { return !bool(mOutOfCore); }
         /// Return @c true if memory for this buffer has not yet been allocated.
         bool empty() const { return !mData || this->isOutOfCore(); }
 #endif
@@ -333,7 +333,7 @@ public:
         void doLoad() const {}
         bool detachFromFile() { return false; }
 #else
-        inline void setOutOfCore(bool b) { mOutOfCore = b; }
+        inline void setOutOfCore(bool b) { mOutOfCore = !b; }
         // To facilitate inlining in the common case in which the buffer is in-core,
         // the loading logic is split into a separate function, doLoad().
         inline void loadValues() const { if (this->isOutOfCore()) this->doLoad(); }
@@ -361,7 +361,8 @@ public:
             ValueType* mData;
             FileInfo*  mFileInfo;
         };
-        Index32 mOutOfCore; // currently interpreted as bool; extra bits reserved for future use
+        // @FIXME mutable is mortal sin
+        mutable Index32 mOutOfCore; // currently interpreted as bool; extra bits reserved for future use
         tbb::spin_mutex mMutex; // 1 byte
         //int8_t mReserved[3]; // padding for alignment
 
@@ -663,10 +664,13 @@ public:
     /// @param bbox      an index-space bounding box
     /// @param fromHalf  if true, floating-point input values are assumed to be 16-bit
     void readBuffers(std::istream& is, const CoordBBox& bbox, bool fromHalf = false);
+    void readBufferOffsets(std::istream& is);
+    void readBufferOffsets(std::istream& is, const CoordBBox& bbox);
     /// @brief Write buffers to a stream.
     /// @param os      the stream to which to write
     /// @param toHalf  if true, output floating-point values as 16-bit half floats
     void writeBuffers(std::ostream& os, bool toHalf = false) const;
+    void writeBufferOffsets(std::ostream&, std::streamoff&) const;
 
     size_t streamingSize(bool toHalf = false) const;
 
@@ -1604,6 +1608,14 @@ inline void
 LeafNode<T,Log2Dim>::readBuffers(std::istream& is, const CoordBBox& clipBBox, bool fromHalf)
 {
 #ifndef OPENVDB_2_ABI_COMPATIBLE
+    {
+        // if delayed loading is in effect and the file version is recent enough
+        // everything was already taken care of in readBufferOffsets
+        bool hasOffsets = io::getFormatVersion(is) >= OPENVDB_FILE_VERSION_BUFFER_OFFSETS;
+        bool delayLoad = io::getMappedFilePtr(is) != NULL;
+        assert(!(hasOffsets && delayLoad));
+    }
+
     std::streamoff maskpos = is.tellg();
 #endif
 
@@ -1685,6 +1697,59 @@ LeafNode<T,Log2Dim>::readBuffers(std::istream& is, const CoordBBox& clipBBox, bo
 
 template<typename T, Index Log2Dim>
 inline void
+LeafNode<T,Log2Dim>::readBufferOffsets(std::istream& is)
+{
+    this->readBufferOffsets(is, CoordBBox::inf());
+}
+
+
+template<typename T, Index Log2Dim>
+inline void
+LeafNode<T,Log2Dim>::readBufferOffsets(std::istream& is, const CoordBBox& clipBBox)
+{
+    assert(io::getFormatVersion(is) >= OPENVDB_FILE_VERSION_BUFFER_OFFSETS);
+    assert(io::getMappedFilePtr(is) != NULL);
+
+    // node completely outside clipping region
+    CoordBBox nodeBBox = this->getNodeBoundingBox();
+    if (!clipBBox.hasOverlap(nodeBBox))
+    {
+        // read and discard buffer offset
+        std::streamoff tmp;
+        is.read(reinterpret_cast<char*>(&tmp), sizeof(tmp));
+        mValueMask.setOff();
+        mBuffer.setOutOfCore(false);
+    }
+
+    // node intersects clipping region
+    else
+    {
+        mBuffer.setOutOfCore(true);
+        mBuffer.mFileInfo = new FileInfo;
+
+        std::streamoff pos;
+        is.read(reinterpret_cast<char*>(&pos), sizeof(pos));
+
+        mBuffer.mFileInfo->maskpos = pos;
+        mBuffer.mFileInfo->bufpos = pos + mValueMask.memUsage();
+        mBuffer.mFileInfo->mapping = io::getMappedFilePtr(is);;
+        mBuffer.mFileInfo->meta = io::getStreamMetadataPtr(is);
+
+        // node not completely inside clipping region
+        if (!clipBBox.isInside(nodeBBox))
+        {
+            T background = zeroVal<T>();
+            if (const void* bgPtr = io::getGridBackgroundValuePtr(is)) {
+                background = *static_cast<const T*>(bgPtr);
+            }
+            this->clip(clipBBox, background);
+        }
+    }
+}
+
+
+template<typename T, Index Log2Dim>
+inline void
 LeafNode<T, Log2Dim>::writeBuffers(std::ostream& os, bool toHalf) const
 {
     // Write out the value mask.
@@ -1692,8 +1757,23 @@ LeafNode<T, Log2Dim>::writeBuffers(std::ostream& os, bool toHalf) const
 
     mBuffer.loadValues();
 
+    std::streampos pos = os.tellp();
+
     io::writeCompressedValues(os, mBuffer.mData, SIZE,
         mValueMask, /*childMask=*/NodeMaskType(), toHalf);
+
+    // remember size of compressed buffer data
+    mBuffer.mOutOfCore = static_cast<Index32>(os.tellp() - pos);
+}
+
+
+template<typename T, Index Log2Dim>
+inline void
+LeafNode<T, Log2Dim>::writeBufferOffsets(std::ostream& os, std::streamoff &offset) const
+{
+    os.write(reinterpret_cast<const char*>(&offset), sizeof(offset));
+    offset += mValueMask.memUsage();
+    offset += mBuffer.mOutOfCore; // this is valid after writeBuffers has been called
 }
 
 

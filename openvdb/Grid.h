@@ -374,12 +374,17 @@ public:
 #ifndef OPENVDB_2_ABI_COMPATIBLE
     /// Read all of this grid's data buffers that intersect the given index-space bounding box.
     virtual void readBuffers(std::istream&, const CoordBBox&) = 0;
+    virtual void readBufferOffsets(std::istream&) = 0;
+    virtual void readBufferOffsets(std::istream&, const CoordBBox&) = 0;
     /// @brief Read all of this grid's data buffers that are not yet resident in memory
     /// (because delayed loading is in effect).
     /// @details If this grid was read from a memory-mapped file, this operation
     /// disconnects the grid from the file.
     /// @sa io::File::open, io::MappedFile
     virtual void readNonresidentBuffers() const = 0;
+
+    /// Write out data buffer offsets for this grid.
+    virtual void writeBufferOffsets(std::ostream&, std::streamoff &offset) const = 0;
 #endif
     /// Write out all data buffers for this grid.
     virtual void writeBuffers(std::ostream&) const = 0;
@@ -773,12 +778,17 @@ public:
 #ifndef OPENVDB_2_ABI_COMPATIBLE
     /// Read all of this grid's data buffers that intersect the given index-space bounding box.
     virtual void readBuffers(std::istream&, const CoordBBox&);
+    virtual void readBufferOffsets(std::istream&);
+    virtual void readBufferOffsets(std::istream&, const CoordBBox&);
     /// @brief Read all of this grid's data buffers that are not yet resident in memory
     /// (because delayed loading is in effect).
     /// @details If this grid was read from a memory-mapped file, this operation
     /// disconnects the grid from the file.
     /// @sa io::File::open, io::MappedFile
     virtual void readNonresidentBuffers() const;
+
+    /// Write out data buffer offsets for this grid.
+    virtual void writeBufferOffsets(std::ostream&, std::streamoff &offset) const;
 #endif
     /// Write out all data buffers for this grid.
     virtual void writeBuffers(std::ostream&) const;
@@ -1305,12 +1315,35 @@ Grid<TreeT>::readBuffers(std::istream& is, const CoordBBox& bbox)
     tree().readBuffers(is, bbox, saveFloatAsHalf());
 }
 
+template<typename TreeT>
+inline void
+Grid<TreeT>::readBufferOffsets(std::istream& is)
+{
+    tree().readBufferOffsets(is);
+}
+
+
+template<typename TreeT>
+inline void
+Grid<TreeT>::readBufferOffsets(std::istream& is, const CoordBBox& bbox)
+{
+    tree().readBufferOffsets(is, bbox);
+}
+
 
 template<typename TreeT>
 inline void
 Grid<TreeT>::readNonresidentBuffers() const
 {
     tree().readNonresidentBuffers();
+}
+
+
+template<typename TreeT>
+inline void
+Grid<TreeT>::writeBufferOffsets(std::ostream& os, std::streamoff &offset) const
+{
+    tree().writeBufferOffsets(os, offset);
 }
 
 #endif // !OPENVDB_2_ABI_COMPATIBLE

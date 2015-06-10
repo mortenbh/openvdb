@@ -170,6 +170,8 @@ public:
 #ifndef OPENVDB_2_ABI_COMPATIBLE
     /// Read all of this tree's data buffers that intersect the given bounding box.
     virtual void readBuffers(std::istream&, const CoordBBox&, bool saveFloatAsHalf = false) = 0;
+    virtual void readBufferOffsets(std::istream&) = 0;
+    virtual void readBufferOffsets(std::istream&, const CoordBBox&) = 0;
     /// @brief Read all of this tree's data buffers that are not yet resident in memory
     /// (because delayed loading is in effect).
     /// @details If this tree was read from a memory-mapped file, this operation
@@ -342,12 +344,17 @@ public:
 #ifndef OPENVDB_2_ABI_COMPATIBLE
     /// Read all of this tree's data buffers that intersect the given bounding box.
     virtual void readBuffers(std::istream&, const CoordBBox&, bool saveFloatAsHalf = false);
+    virtual void readBufferOffsets(std::istream&);
+    virtual void readBufferOffsets(std::istream&, const CoordBBox&);
     /// @brief Read all of this tree's data buffers that are not yet resident in memory
     /// (because delayed loading is in effect).
     /// @details If this tree was read from a memory-mapped file, this operation
     /// disconnects the tree from the file.
     /// @sa clipUnallocatedNodes, io::File::open, io::MappedFile
     virtual void readNonresidentBuffers() const;
+
+    /// Write out data buffer offsets for this grid.
+    virtual void writeBufferOffsets(std::ostream&, std::streamoff &offset) const;
 #endif
     /// Write out all data buffers for this tree.
     virtual void writeBuffers(std::ostream&, bool saveFloatAsHalf = false) const;
@@ -1429,12 +1436,38 @@ Tree<RootNodeType>::readBuffers(std::istream &is, const CoordBBox& bbox, bool sa
 
 template<typename RootNodeType>
 inline void
+Tree<RootNodeType>::readBufferOffsets(std::istream &is)
+{
+    this->clearAllAccessors();
+    mRoot.readBufferOffsets(is);
+}
+
+
+template<typename RootNodeType>
+inline void
+Tree<RootNodeType>::readBufferOffsets(std::istream &is, const CoordBBox& bbox)
+{
+    this->clearAllAccessors();
+    mRoot.readBufferOffsets(is, bbox);
+}
+
+
+template<typename RootNodeType>
+inline void
 Tree<RootNodeType>::readNonresidentBuffers() const
 {
     for (LeafCIter it = this->cbeginLeaf(); it; ++it) {
         // Retrieving the value of a leaf voxel forces loading of the leaf node's voxel buffer.
         it->getValue(Index(0));
     }
+}
+
+
+template<typename RootNodeType>
+inline void
+Tree<RootNodeType>::writeBufferOffsets(std::ostream &os, std::streamoff &offset) const
+{
+    mRoot.writeBufferOffsets(os, offset);
 }
 
 #endif // !OPENVDB_2_ABI_COMPATIBLE

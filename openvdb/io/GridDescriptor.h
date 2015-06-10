@@ -64,6 +64,9 @@ public:
     void setGridPos(boost::int64_t pos) { mGridPos = pos; }
     boost::int64_t getGridPos() const { return mGridPos; }
 
+    void setBlockOffsetPos(boost::int64_t pos) { mBlockOffsetPos = pos; }
+    boost::int64_t getBlockOffsetPos() const { return mBlockOffsetPos; }
+
     void setBlockPos(boost::int64_t pos) { mBlockPos = pos; }
     boost::int64_t getBlockPos() const { return mBlockPos; }
 
@@ -72,10 +75,12 @@ public:
 
     // These methods seek to the right position in the given stream.
     void seekToGrid(std::istream&) const;
+    void seekToBlockOffsets(std::istream&) const;
     void seekToBlocks(std::istream&) const;
     void seekToEnd(std::istream&) const;
 
     void seekToGrid(std::ostream&) const;
+    void seekToBlockOffsets(std::ostream&) const;
     void seekToBlocks(std::ostream&) const;
     void seekToEnd(std::ostream&) const;
 
@@ -118,6 +123,8 @@ private:
     bool mSaveFloatAsHalf;
     /// Location in the stream where the grid data is stored
     boost::int64_t mGridPos;
+    /// Location in the stream where the grid blocks offsets are stored
+    boost::int64_t mBlockOffsetPos;
     /// Location in the stream where the grid blocks are stored
     boost::int64_t mBlockPos;
     /// Location in the stream where the next grid descriptor begins

@@ -57,6 +57,7 @@ const char* SEP = "\x1e"; // ASCII "record separator"
 GridDescriptor::GridDescriptor():
     mSaveFloatAsHalf(false),
     mGridPos(0),
+    mBlockOffsetPos(0),
     mBlockPos(0),
     mEndPos(0)
 {
@@ -68,6 +69,7 @@ GridDescriptor::GridDescriptor(const Name &name, const Name &type, bool half):
     mGridType(type),
     mSaveFloatAsHalf(half),
     mGridPos(0),
+    mBlockOffsetPos(0),
     mBlockPos(0),
     mEndPos(0)
 {
@@ -93,6 +95,7 @@ void
 GridDescriptor::writeStreamPos(std::ostream &os) const
 {
     os.write(reinterpret_cast<const char*>(&mGridPos), sizeof(boost::int64_t));
+    os.write(reinterpret_cast<const char*>(&mBlockOffsetPos), sizeof(boost::int64_t));
     os.write(reinterpret_cast<const char*>(&mBlockPos), sizeof(boost::int64_t));
     os.write(reinterpret_cast<const char*>(&mEndPos), sizeof(boost::int64_t));
 }
@@ -126,6 +129,10 @@ GridDescriptor::read(std::istream &is)
 
     // Read in the offsets.
     is.read(reinterpret_cast<char*>(&mGridPos), sizeof(boost::int64_t));
+    if (getFormatVersion(is) >= OPENVDB_FILE_VERSION_BUFFER_OFFSETS)
+    {
+        is.read(reinterpret_cast<char*>(&mBlockOffsetPos), sizeof(boost::int64_t));
+    }
     is.read(reinterpret_cast<char*>(&mBlockPos), sizeof(boost::int64_t));
     is.read(reinterpret_cast<char*>(&mEndPos), sizeof(boost::int64_t));
 
@@ -136,6 +143,12 @@ void
 GridDescriptor::seekToGrid(std::istream &is) const
 {
     is.seekg(mGridPos, std::ios_base::beg);
+}
+
+void
+GridDescriptor::seekToBlockOffsets(std::istream &is) const
+{
+    is.seekg(mBlockOffsetPos, std::ios_base::beg);
 }
 
 void
@@ -155,6 +168,12 @@ void
 GridDescriptor::seekToGrid(std::ostream &os) const
 {
     os.seekp(mGridPos, std::ios_base::beg);
+}
+
+void
+GridDescriptor::seekToBlockOffsets(std::ostream &os) const
+{
+    os.seekp(mBlockOffsetPos, std::ios_base::beg);
 }
 
 void

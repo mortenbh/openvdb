@@ -574,8 +574,11 @@ public:
     bool readTopology(std::istream&, bool fromHalf = false);
 
     void writeBuffers(std::ostream&, bool toHalf = false) const;
+    void writeBufferOffsets(std::ostream&, std::streamoff &offset) const;
     void readBuffers(std::istream&, bool fromHalf = false);
     void readBuffers(std::istream&, const CoordBBox&, bool fromHalf = false);
+    void readBufferOffsets(std::istream&);
+    void readBufferOffsets(std::istream&, const CoordBBox&);
 
 
     //
@@ -2313,6 +2316,16 @@ RootNode<ChildT>::writeBuffers(std::ostream& os, bool toHalf) const
 
 template<typename ChildT>
 inline void
+RootNode<ChildT>::writeBufferOffsets(std::ostream& os, std::streamoff &offset) const
+{
+    for (MapCIter i = mTable.begin(), e = mTable.end(); i != e; ++i) {
+        if (isChild(i)) getChild(i).writeBufferOffsets(os, offset);
+    }
+}
+
+
+template<typename ChildT>
+inline void
 RootNode<ChildT>::readBuffers(std::istream& is, bool fromHalf)
 {
     for (MapIter i = mTable.begin(), e = mTable.end(); i != e; ++i) {
@@ -2335,6 +2348,37 @@ RootNode<ChildT>::readBuffers(std::istream& is, const CoordBBox& clipBBox, bool 
             // unserialized in the same order.)
             ChildT& child = getChild(i);
             child.readBuffers(is, clipBBox, fromHalf);
+        }
+    }
+    // Clip root-level tiles and prune children that were clipped.
+    this->clip(clipBBox);
+}
+
+
+template<typename ChildT>
+inline void
+RootNode<ChildT>::readBufferOffsets(std::istream& is)
+{
+    for (MapIter i = mTable.begin(), e = mTable.end(); i != e; ++i) {
+        if (isChild(i)) getChild(i).readBufferOffsets(is);
+    }
+}
+
+
+template<typename ChildT>
+inline void
+RootNode<ChildT>::readBufferOffsets(std::istream& is, const CoordBBox& clipBBox)
+{
+    const Tile bgTile(mBackground, /*active=*/false);
+
+    for (MapIter i = mTable.begin(), e = mTable.end(); i != e; ++i) {
+        if (isChild(i)) {
+            // Stream in and clip the branch rooted at this child.
+            // (We can't skip over children that lie outside the clipping region,
+            // because buffers are serialized in depth-first order and need to be
+            // unserialized in the same order.)
+            ChildT& child = getChild(i);
+            child.readBufferOffsets(is, clipBBox);
         }
     }
     // Clip root-level tiles and prune children that were clipped.

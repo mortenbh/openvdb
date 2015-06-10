@@ -460,8 +460,11 @@ public:
     void writeTopology(std::ostream&, bool toHalf = false) const;
     void readTopology(std::istream&, bool fromHalf = false);
     void writeBuffers(std::ostream&, bool toHalf = false) const;
+    void writeBufferOffsets(std::ostream&, std::streamoff&) const;
     void readBuffers(std::istream&, bool fromHalf = false);
     void readBuffers(std::istream&, const CoordBBox&, bool fromHalf = false);
+    void readBufferOffsets(std::istream&);
+    void readBufferOffsets(std::istream&, const CoordBBox&);
 
 
     //
@@ -2911,6 +2914,16 @@ InternalNode<ChildT, Log2Dim>::writeBuffers(std::ostream& os, bool toHalf) const
 
 template<typename ChildT, Index Log2Dim>
 inline void
+InternalNode<ChildT, Log2Dim>::writeBufferOffsets(std::ostream& os, std::streamoff &offset) const
+{
+    for (ChildOnCIter iter = this->cbeginChildOn(); iter; ++iter) {
+        iter->writeBufferOffsets(os, offset);
+    }
+}
+
+
+template<typename ChildT, Index Log2Dim>
+inline void
 InternalNode<ChildT, Log2Dim>::readBuffers(std::istream& is, bool fromHalf)
 {
     for (ChildOnIter iter = this->beginChildOn(); iter; ++iter) {
@@ -2930,6 +2943,37 @@ InternalNode<ChildT, Log2Dim>::readBuffers(std::istream& is,
         // because buffers are serialized in depth-first order and need to be
         // unserialized in the same order.)
         iter->readBuffers(is, clipBBox, fromHalf);
+    }
+
+    // Get this tree's background value.
+    ValueType background = zeroVal<ValueType>();
+    if (const void* bgPtr = io::getGridBackgroundValuePtr(is)) {
+        background = *static_cast<const ValueType*>(bgPtr);
+    }
+    this->clip(clipBBox, background);
+}
+
+
+template<typename ChildT, Index Log2Dim>
+inline void
+InternalNode<ChildT, Log2Dim>::readBufferOffsets(std::istream& is)
+{
+    for (ChildOnIter iter = this->beginChildOn(); iter; ++iter) {
+        iter->readBufferOffsets(is);
+    }
+}
+
+
+template<typename ChildT, Index Log2Dim>
+inline void
+InternalNode<ChildT, Log2Dim>::readBufferOffsets(std::istream& is, const CoordBBox& clipBBox)
+{
+    for (ChildOnIter iter = this->beginChildOn(); iter; ++iter) {
+        // Stream in the branch rooted at this child.
+        // (We can't skip over children that lie outside the clipping region,
+        // because buffers are serialized in depth-first order and need to be
+        // unserialized in the same order.)
+        iter->readBufferOffsets(is, clipBBox);
     }
 
     // Get this tree's background value.

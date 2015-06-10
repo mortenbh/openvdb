@@ -1048,6 +1048,10 @@ doReadGrid(GridBase::Ptr grid, const GridDescriptor& gd, std::istream& is, const
         static void readBuffers(GridBase& g, std::istream& istrm, const BBoxd& worldBBox) {
             g.readBuffers(istrm, g.constTransform().worldToIndexNodeCentered(worldBBox));
         }
+
+        static void readBufferOffsets(GridBase& g, std::istream& istrm, NoBBox) { g.readBufferOffsets(istrm); }
+        static void readBufferOffsets(GridBase& g, std::istream& istrm, const CoordBBox& indexBBox) { g.readBufferOffsets(istrm, indexBBox); }
+        static void readBufferOffsets(GridBase& g, std::istream& istrm, const BBoxd& worldBBox) { g.readBufferOffsets(istrm, g.constTransform().worldToIndexNodeCentered(worldBBox)); }
 #endif
     };
 
@@ -1091,7 +1095,21 @@ doReadGrid(GridBase::Ptr grid, const GridDescriptor& gd, std::istream& is, const
         grid->readTransform(is);
         if (!gd.isInstance()) {
             grid->readTopology(is);
-            Local::readBuffers(*grid, is, bbox);
+
+            // @FIXME assume that grid offsets are always present for now
+            // if (inputHasGridOffsets())
+            if (getFormatVersion(is) >= OPENVDB_FILE_VERSION_BUFFER_OFFSETS
+            && io::getMappedFilePtr(is) != NULL)
+            {
+                gd.seekToBlockOffsets(is);
+                Local::readBufferOffsets(*grid, is, bbox);
+            }
+            else
+            {
+                gd.seekToBlocks(is);
+                Local::readBuffers(*grid, is, bbox);
+                gd.seekToEnd(is);
+            }
         }
     } else {
         // Older versions of the library stored the transform after the topology.
@@ -1311,6 +1329,14 @@ Archive::writeGrid(GridDescriptor& gd, GridBase::ConstPtr grid,
 
     // Save out the data blocks of the grid.
     grid->writeBuffers(os);
+
+    // Now we know the position of the grid block offsets.
+    if (seekable)
+    {
+        gd.setBlockOffsetPos(os.tellp());
+        std::streamoff offset = gd.getBlockPos();
+        grid->writeBufferOffsets(os, offset);
+    }
 
     // Now we know the end position of this grid.
     if (seekable) gd.setEndPos(os.tellp());
