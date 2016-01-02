@@ -280,8 +280,11 @@ public:
     /// Read in the topology and the origin.
     void readBuffers(std::istream&, bool fromHalf = false);
     void readBuffers(std::istream& is, const CoordBBox&, bool fromHalf = false);
+    void readBufferOffsets(std::istream&) {}
+    void readBufferOffsets(std::istream& is, const CoordBBox&) {}
     /// Write out the topology and the origin.
     void writeBuffers(std::ostream&, bool toHalf = false) const;
+    void writeBufferOffsets(std::ostream&, std::streamoff&) const {}
 
     //
     // Accessor methods
